@@ -57,5 +57,6 @@ def disk_cache(RESULT_CACHE: Path = Path("result_cache")) -> Callable:
             with open(cache_path, "wb") as file:
                 pickle.dump(result, file)
             return result
+
         return wrapper
     return decorator
