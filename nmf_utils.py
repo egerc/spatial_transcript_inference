@@ -26,7 +26,7 @@ def nmf_predictor(
     n_shared_features = query_matrix.shape[1]
 
     _, H_ref, _ = non_negative_factorization(
-        reference_matrix,
+        X=reference_matrix,
         n_components=n_components,
         *args,
         **kwargs
@@ -34,7 +34,7 @@ def nmf_predictor(
     H_query, H_predicted = np.hsplit(H_ref, [n_shared_features])
 
     W_query, _, _ = non_negative_factorization(
-        query_matrix,
+        X=query_matrix,
         H=H_query,
         init="custom",
         update_H=False,
