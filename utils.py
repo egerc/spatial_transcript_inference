@@ -1,5 +1,6 @@
-from typing import Any, Callable, Generator, Optional
+from typing import Any, Callable, Generator, Hashable, Optional
 
+from anndata import AnnData
 import numpy as np
 from numpy.typing import NDArray
 from pandas import Index
@@ -107,3 +108,33 @@ def mean_randomized_cross_feature_prediction(
         res.append(prediction[:, np.argsort(feature_order)])
     res = np.stack(res).mean(axis=0)
     return res
+
+def group_by_common_obs(
+    adata1: AnnData,
+    adata2: AnnData,
+    obs_column: str,
+) -> Generator[tuple[Hashable, AnnData, AnnData], None, None]:
+    """
+    Yields (value, adata1_subset, adata2_subset) for each value shared in the given .obs column.
+
+    Both AnnData objects are filtered to include only rows (cells) where the specified column
+    has a shared value.
+
+    Example:
+        adata1.obs[obs_column] = [A, B, C]
+        adata2.obs[obs_column] = [B, C, D]
+
+    Yields:
+        ("B", adata1[obs == "B"], adata2[obs == "B"])
+        ("C", adata1[obs == "C"], adata2[obs == "C"])
+    """
+    common_values = np.intersect1d(
+       adata1.obs[obs_column].unique(), 
+       adata2.obs[obs_column].unique()
+    )
+    for value in common_values:
+        adata1_filtered, adata2_filtered = map(
+            lambda adata: adata[adata.obs[obs_column] == value].copy(),
+            [adata1, adata2]
+        )
+        yield value, adata1_filtered, adata2_filtered
