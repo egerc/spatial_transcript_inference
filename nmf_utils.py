@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Callable, Optional
 
 from sklearn.decomposition import non_negative_factorization
 import numpy as np
@@ -7,10 +7,10 @@ from numpy.typing import NDArray
 def nmf_predictor(
     query_matrix: NDArray,
     reference_matrix: NDArray,
-    n_components: int,
+    nmf_func: Callable[[NDArray], tuple[NDArray, NDArray, int]],
     *args,
     **kwargs
-) -> NDArray[Any]:
+) -> NDArray:
     """
     Predicts feature counts for a query matrix based on the NMF feature by factor embedding in a reference dataset
 
@@ -25,12 +25,10 @@ def nmf_predictor(
     """
     n_shared_features = query_matrix.shape[1]
 
-    _, H_ref, _ = non_negative_factorization(
-        X=reference_matrix,
-        n_components=n_components,
-        *args,
-        **kwargs
+    _, H_ref, _ = nmf_func(
+        reference_matrix,
     )
+
     H_query, H_predicted = np.hsplit(H_ref, [n_shared_features])
 
     W_query, _, _ = non_negative_factorization(
