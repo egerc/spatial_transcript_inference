@@ -6,6 +6,7 @@
 import logging
 
 import numpy as np
+import pandas as pd
 import tangram as tg
 from tangram import mapping_utils as mu
 from tangram import utils as ut
@@ -193,16 +194,16 @@ def map_cells_to_space(
     logging.info("Allocate tensors for mapping.")
     # Allocate tensors (AnnData matrix can be sparse or not)
 
-    if isinstance(adata_sc.X, csc_matrix) or isinstance(adata_sc.X, csr_matrix):
-        S = np.array(adata_sc[:, training_genes].X.toarray(), dtype="float32",)
+    if isinstance(adata_sc.X, csc_matrix) or isinstance(adata_sc.X, csr_matrix): # type: ignore
+        S = np.array(adata_sc[:, training_genes].X.toarray(), dtype="float32",) # type: ignore
     elif isinstance(adata_sc.X, np.ndarray):
-        S = np.array(adata_sc[:, training_genes].X.toarray(), dtype="float32",)
+        S = np.array(adata_sc[:, training_genes].X.toarray(), dtype="float32",) # type: ignore
     else:
         X_type = type(adata_sc.X)
         logging.error("AnnData X has unrecognized type: {}".format(X_type))
         raise NotImplementedError
 
-    if isinstance(adata_sp.X, csc_matrix) or isinstance(adata_sp.X, csr_matrix):
+    if isinstance(adata_sp.X, csc_matrix) or isinstance(adata_sp.X, csr_matrix): # type: ignore
         G = np.array(adata_sp[:, training_genes].X.toarray(), dtype="float32")
     elif isinstance(adata_sp.X, np.ndarray):
         G = np.array(adata_sp[:, training_genes].X, dtype="float32")
@@ -266,13 +267,13 @@ def map_cells_to_space(
             )
         )
         mapper = mo.Mapper(
-            S=S, G=G, d=d, device=device, random_state=random_state, **hyperparameters,
+            S=S, G=G, d=d, device=device, random_state=random_state, **hyperparameters, # type: ignore
         )
 
         # TODO `train` should return the loss function
 
         mapping_matrix, training_history = mapper.train(
-            learning_rate=learning_rate, num_epochs=num_epochs, print_each=print_each,
+            learning_rate=learning_rate, num_epochs=num_epochs, print_each=print_each, # type: ignore
         )
 
     # constrained mode
@@ -294,11 +295,11 @@ def map_cells_to_space(
         )
 
         mapper = mo.MapperConstrained(
-            S=S, G=G, d=d, device=device, random_state=random_state, **hyperparameters,
+            S=S, G=G, d=d, device=device, random_state=random_state, **hyperparameters, # type: ignore
         )
 
         mapping_matrix, F_out, training_history = mapper.train(
-            learning_rate=learning_rate, num_epochs=num_epochs, print_each=print_each,
+            learning_rate=learning_rate, num_epochs=num_epochs, print_each=print_each, # type: ignore
         )
 
     logging.info("Saving results..")
@@ -312,7 +313,7 @@ def map_cells_to_space(
         adata_map.obs["F_out"] = F_out
 
     # Annotate cosine similarity of each training gene
-    G_predicted = adata_map.X.T @ S
+    G_predicted = adata_map.X.T @ S # type: ignore
     cos_sims = []
     for v1, v2 in zip(G.T, G_predicted.T):
         norm_sq = np.linalg.norm(v1) * np.linalg.norm(v2)
@@ -369,7 +370,7 @@ def project_genes_unfiltered(adata_map, adata_sc, cluster_label=None, scale=True
     if not adata_map.obs.index.equals(adata_sc.obs.index):
         raise ValueError("The two AnnDatas need to have same `obs` index.")
     if hasattr(adata_sc.X, "toarray"):
-        adata_sc.X = adata_sc.X.toarray()
+        adata_sc.X = adata_sc.X.toarray() # type: ignore
     X_space = adata_map.X.T @ adata_sc.X
     adata_ge = sc.AnnData(
         X=X_space, obs=adata_map.var, var=adata_sc.var, uns=adata_sc.uns
@@ -400,7 +401,7 @@ def tangram_predictor(
         (query_matrix, reference_matrix)
     )
     pp_adatas_unfiltered(adata_reference, adata_query)
-    ad_map = tg.map_cells_to_space(
+    ad_map = map_cells_to_space(
         adata_sc=adata_reference,
         adata_sp=adata_query,
     )
