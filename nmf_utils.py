@@ -1,13 +1,134 @@
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Iterable, Optional, TypeVar
 
+from anndata import AnnData
 from sklearn.decomposition import non_negative_factorization
+from sklearn.metrics import mean_squared_error
+from kneed import KneeLocator
 import numpy as np
 from numpy.typing import NDArray
+import pandas as pd
+import scanpy as sc
+
+def select_optimal_components(
+    X: NDArray[Any],
+    n_components_range: Iterable[int],
+    *args: Any,
+    **kwargs: Any
+) -> tuple[Optional[Any], list[float]]:
+    """
+    Select the optimal number of NMF components by computing reconstruction error (MSE)
+    for each candidate, then finding the 'knee' point on the error curve.
+
+    Args:
+        X (NDArray): Input data matrix to factorize (non-negative values).
+        n_components_range (list[int]): List of candidate numbers of components to test.
+        *args, **kwargs: Additional arguments passed to `KneeLocator`.
+
+    Returns:
+        Optional[int]: The number of components at the knee of the MSE curve, or None if no knee is found.
+    """
+
+    def locate_knee(
+        x: Iterable[int],
+        y: Iterable[float],
+    ) -> Optional[Any]:
+        """Identify the knee point on a curve."""
+        knee: Optional[Any] = KneeLocator(x, y, *args, **kwargs).knee
+        return knee
+
+    def compute_mse_for_n(n: int) -> float:
+        """Compute the reconstruction MSE for a given number of components."""
+        W, H, _ = non_negative_factorization(X, n_components=n)
+        X_hat: NDArray[Any] = W @ H
+        return float(mean_squared_error(X, X_hat))
+
+    MSEs: list[float] = [compute_mse_for_n(n) for n in n_components_range]
+    knee: Optional[int] = locate_knee(n_components_range, MSEs)
+    return knee, MSEs
+
+def initialize_nmf_factors_from_clustering(
+    arr: NDArray, 
+    n_clusters: int
+) -> tuple[NDArray, NDArray]:
+    """
+    Initialize W and H matrices for NMF using cluster-specific ranked gene scores.
+
+    This function clusters the input `AnnData` object using Leiden clustering,
+    finds the resolution that yields the desired number of clusters, ranks genes 
+    per cluster, and constructs:
+    - W: A matrix of gene scores (non-negative)
+    - H: One-hot encoded cluster membership per cell, with small non-zero entries
+    
+    Parameters:
+        arr: The input array
+        n_clusters (int): Desired number of clusters for initialization.
+
+    Returns:
+        Tuple[np.ndarray, np.ndarray]: W and H matrices for NMF initialization.
+    """
+    adata = AnnData(arr)
+    
+    T = TypeVar("T")
+
+    def find_input_for_output(
+        f: Callable[[float], T],
+        g: Callable[[T], int],
+        target: int,
+        max_iter: int = 500
+    ) -> T:
+        """Binary-like recursive search for an input that makes g(f(x)) == target."""
+
+        def search(x: float, lower: Optional[float], upper: Optional[float], iter: int) -> T:
+            t: T = f(x)
+            value: int = g(t)
+
+            if iter >= max_iter:
+                print(f"max_iter exceeded, closest value found: {value}")
+                return t
+                #raise RuntimeError("Maximum search iterations reached without convergence.")
+            if value == target:
+                return t
+
+            match value > target, lower, upper:
+                case (True, None, _):
+                    return search(x / 2, lower, x, iter + 1)
+                case (True, _, _):
+                    assert lower is not None
+                    return search((lower + x) / 2, lower, x, iter + 1)
+                case (False, _, None):
+                    return search(x * 2, x, upper, iter + 1)
+                case (False, _, _):
+                    assert upper is not None
+                    return search((x + upper) / 2, x, upper, iter + 1)
+
+        return search(1.0, None, None, 0)
+
+    adata_copy: AnnData = adata.copy()
+    sc.pp.normalize_total(adata_copy)
+    sc.pp.log1p(adata_copy)
+    sc.tl.pca(adata_copy)
+    sc.pp.neighbors(adata_copy)
+
+    result: AnnData = find_input_for_output(
+        f=lambda x: sc.tl.leiden(adata_copy, resolution=x, copy=True), # type: ignore
+        g=lambda adata: adata.obs["leiden"].nunique(),
+        target=n_clusters
+    )
+
+    sc.tl.rank_genes_groups(result, 'leiden')
+
+    W = pd.get_dummies(result.obs["leiden"], dtype="float").replace(0, 0.1).values.astype(arr.dtype)
+    H: NDArray[Any] = (lambda arr: np.where(arr < 0, 0.1, arr))(
+        pd.concat(
+            [sc.get.rank_genes_groups_df(result, index).set_index("names")["scores"] for index in list(result.uns["rank_genes_groups"]["names"].dtype.names)], 
+            axis=1
+        ).reindex(result.var.index).values
+    ).T.astype(arr.dtype)
+    return W.copy(order="C"), H.copy(order="C")
 
 def nmf_predictor(
     query_matrix: NDArray,
     reference_matrix: NDArray,
-    nmf_func: Callable[[NDArray], tuple[NDArray, NDArray, int]],
     *args,
     **kwargs
 ) -> NDArray:
@@ -25,8 +146,25 @@ def nmf_predictor(
     """
     n_shared_features = query_matrix.shape[1]
 
-    _, H_ref, _ = nmf_func(
+    n_components, losses = select_optimal_components(
         reference_matrix,
+        range(2, 10),
+        curve="convex",
+        direction="decreasing"
+    )
+    assert n_components
+    n_components = int(n_components)
+
+    W_init, H_init = initialize_nmf_factors_from_clustering(
+        reference_matrix,
+        n_clusters=n_components
+    )
+
+    _, H_ref, _ = non_negative_factorization(
+        reference_matrix,
+        W=W_init,
+        H=H_init,
+        init="custom"
     )
 
     H_query, H_predicted = np.hsplit(H_ref, [n_shared_features])
