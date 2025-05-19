@@ -1,4 +1,6 @@
-from typing import Any
+from typing import Any, Callable
+
+import numpy as np
 from numpy.typing import NDArray
 import torch
 from torch import Tensor
@@ -6,13 +8,22 @@ import torch.nn as nn
 import torch.nn.functional as F
 from scipy.stats import linregress
 
+
 class Model(nn.Module):
     def __init__(
-            self, 
-            input_tensor: Tensor, 
-            n_latent: int, 
-            target_tensor: Tensor
+        self,
+        input_tensor: Tensor,
+        n_latent: int,
+        target_tensor: Tensor
     ) -> None:
+        """
+        Initializes a simple 2-layer MLP.
+
+        Args:
+            input_tensor: Input tensor for training (n_samples × n_input).
+            n_latent: Number of latent units in the hidden layer.
+            target_tensor: Target tensor for training (n_samples × n_output).
+        """
         super().__init__()
         self.input_tensor = input_tensor
         self.target_tensor = target_tensor
@@ -23,56 +34,104 @@ class Model(nn.Module):
         self.fc1 = nn.Linear(n_input, n_latent)
         self.fc2 = nn.Linear(n_latent, n_output)
 
-    def forward(self, x) -> Tensor:
+    def forward(self, x: Tensor) -> Tensor:
+        """
+        Forward pass through the network.
+
+        Args:
+            x: Input tensor.
+
+        Returns:
+            Output tensor after forward pass.
+        """
         x = F.relu(self.fc1(x))
         return self.fc2(x)
 
-    def converged(self, losses: list[float], window: int = 10) -> bool:
+    def converged(self, losses: list[float], window: int = 10, cutoff: float = 0) -> bool:
         """
-        Check convergence based on the slope of the loss curve over the last `window` epochs.
-        
-        Returns True if slope ≥ 0, indicating no further improvement.
+        Checks if training has converged based on recent loss slope.
+
+        Args:
+            losses: List of recorded loss values.
+            window: Number of epochs to consider for slope.
+            cutoff: Minimum slope to consider as not converged.
+
+        Returns:
+            True if slope ≥ cutoff, False otherwise.
         """
         if len(losses) < window:
             return False
         y = losses[-window:]
         x = list(range(len(y)))
         slope, _, _, _, _ = linregress(x, y)
-        return slope >= 0
+        return slope >= cutoff
 
     def train(
         self,
-        optimizer,
-        lr,
-        loss_fn,
-        max_n_epochs
-    ) -> list[Any]:
+        optimizer: Callable[..., torch.optim.Optimizer],
+        lr: float,
+        loss_fn: Any,
+        max_n_epochs: int,
+        verbose: bool = False
+    ) -> list[float]:
+        """
+        Trains the model until convergence or max epochs.
+
+        Args:
+            optimizer: Optimizer class (e.g. torch.optim.Adam).
+            lr: Learning rate.
+            loss_fn: Loss function.
+            max_n_epochs: Maximum number of training epochs.
+            verbose: Whether to print final epoch info.
+
+        Returns:
+            List of loss values per epoch.
+        """
         optimizer = optimizer(self.parameters(), lr=lr)
         losses = []
-        for _ in range(max_n_epochs):
+        window = 10
+        for epoch in range(max_n_epochs):
             output = self(self.input_tensor)
             loss = loss_fn(output, self.target_tensor)
             losses.append(loss.item())
             loss.backward()
             optimizer.step()
             optimizer.zero_grad()
-            if self.converged(losses, window=10):
-                print("convergence reached")
+            if epoch % window == 0 and self.converged(losses, window=window, cutoff=5e-1):
+                print(f"convergence reached, training stopped at {epoch}")
                 break
+        if verbose:
+            print(f"training stopped at {max_n_epochs=}")
         return losses
+
 
 def nn_predictor(
     query_matrix: NDArray,
-    reference_matrix: NDArray
+    reference_matrix: NDArray,
+    *args,
+    **kwargs,
 ) -> NDArray:
+    """
+    Predicts target values from a reference using a trained neural network.
+
+    Args:
+        query_matrix: Matrix to predict from (n_samples × n_features).
+        reference_matrix: Matrix used to train the model 
+                          (n_samples × (n_input + n_output)).
+
+    Returns:
+        Predicted values as a NumPy array.
+    """
     n_shared_genes = query_matrix.shape[1]
     input_tensor, target_tensor = (Tensor(arr) for arr in np.hsplit(reference_matrix, [n_shared_genes]))
     model = Model(input_tensor, 10, target_tensor)
     model.train(
         torch.optim.Adam,
-        1e-3,
+        1e-1,
         torch.nn.MSELoss(),
-        1000
+        1000,
+        *args,
+        **kwargs,
     )
     query_tensor: Tensor = Tensor(query_matrix)
     predicted_counts = model(query_tensor)
