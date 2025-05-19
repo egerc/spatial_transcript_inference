@@ -1,7 +1,10 @@
-### This file contains some functions copied from the original source code. This had to be done to change the behaviour around non expressed genes.
-### For the purpose of benchmarking these methods and create comparable results, the entire count matrix of shared genes between a query and reference dataset
-### is reconstructed. However the functions pp_adatas, map_cells_to_space and project genes from the original tangram source code either filter 
-### zero count genes or raise an Error when it encounters them. This behaviour was adjusted in the copied functions.
+"""
+This file contains some functions copied from the original tangram source code. This had to be done to change the behaviour around non expressed genes.
+For the purpose of benchmarking the entire count matrix of shared genes between a query and reference dataset is reconstructed
+However the functions pp_adatas, map_cells_to_space and project genes from the original tangram source code either filter 
+zero count genes or raise an Error when it encounters them. This behaviour was adjusted in the copied functions.
+The concrete changes can be found via ctrl/cmd + f "code adapted"
+"""
 
 import logging
 
@@ -36,8 +39,8 @@ def pp_adatas_unfiltered(adata_sc, adata_sp, genes=None, gene_to_lowercase = Tru
     """
 
     # remove all-zero-valued genes
-    #sc.pp.filter_genes(adata_sc, min_cells=1)
-    #sc.pp.filter_genes(adata_sp, min_cells=1)
+    #sc.pp.filter_genes(adata_sc, min_cells=1) code adapted
+    #sc.pp.filter_genes(adata_sp, min_cells=1) code adapted
 
     if genes is None:
         # Use all genes
@@ -212,8 +215,8 @@ def map_cells_to_space(
         logging.error("AnnData X has unrecognized type: {}".format(X_type))
         raise NotImplementedError
 
-    #if not S.any(axis=0).all() or not G.any(axis=0).all():
-    #    raise ValueError("Genes with all zero values detected. Run `pp_adatas()`.")
+    #if not S.any(axis=0).all() or not G.any(axis=0).all(): code adapted
+    #    raise ValueError("Genes with all zero values detected. Run `pp_adatas()`.") code adapted
 
     d_source = None
 
@@ -362,7 +365,7 @@ def project_genes_unfiltered(adata_map, adata_sc, cluster_label=None, scale=True
     adata_sc.var_names_make_unique()
 
     # remove all-zero-valued genes
-    #sc.pp.filter_genes(adata_sc, min_cells=1)
+    #sc.pp.filter_genes(adata_sc, min_cells=1) code adapted
 
     if cluster_label:
         adata_sc = mu.adata_to_cluster_expression(adata_sc, cluster_label, scale=scale)
