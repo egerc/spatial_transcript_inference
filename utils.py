@@ -1,27 +1,44 @@
-from typing import Any, Callable, Generator, Hashable, Optional
+from typing import Any, Callable, Generator, Hashable, Iterable, Optional
 
 from anndata import AnnData
 import numpy as np
 from numpy.typing import NDArray
 from pandas import Index
 
-def get_aligned_gene_sets(
-    query_genes: Index,
-    reference_genes: Index,
-) -> tuple[NDArray[np.str_], NDArray[np.str_]]:
+def filter_celltypes_by_size(
+    adata: AnnData,
+    obs_column: str,
+    min_cell_count: int,
+) -> AnnData:
     """
-    Identifies gene subsets from query and reference gene indices.
-    Necessary to order the count matrixes feature wise for prediction.
+    Keep only cell types with at least `min_cell_count` cells.
 
     Arguments:
-        query_genes: Index of gene names measured in the query data
-        reference_genes: Index of gene names measured in the reference data
+        adata: AnnData object.
+        obs_column: Column in `adata.obs` with cell type labels.
+        min_cell_count: Minimum number of cells per cell type to keep.
 
     Returns:
-        shared_genes: array of gene names common to both query and reference, in sorted order.
-        reference_gene_order: array of gene names in reference composed of shared genes
-        followed by reference-specific genes (both sorted).
+        Filtered AnnData object.
     """
+    celltype_counts = adata.obs[obs_column].value_counts()
+    valid_celltypes = list(celltype_counts[celltype_counts >= min_cell_count].index)
+    return adata[adata.obs[obs_column].isin(valid_celltypes)].copy()
+
+def get_aligned_gene_sets(
+    genes: tuple[Index, Index],
+) -> tuple[NDArray[np.str_], NDArray[np.str_]]:
+    """
+    Returns aligned gene sets from query and reference gene indices.
+
+    Arguments:
+        genes: Tuple of (query_genes, reference_genes), both as Index objects.
+
+    Returns:
+        shared_genes: Genes present in both query and reference, sorted.
+        reference_gene_order: Reference genes with shared genes first, followed by reference-only genes (both sorted).
+    """
+    query_genes, reference_genes = genes
     shared_genes = np.intersect1d(query_genes, reference_genes)
     reference_only_genes = np.setdiff1d(reference_genes, shared_genes)
     reference_gene_order = np.hstack([shared_genes, reference_only_genes])
@@ -138,3 +155,4 @@ def group_by_common_obs(
             [adata1, adata2]
         )
         yield value, adata1_filtered, adata2_filtered
+
