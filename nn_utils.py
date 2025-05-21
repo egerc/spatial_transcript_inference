@@ -9,29 +9,6 @@ import torch.nn.functional as F
 from scipy.stats import linregress
 from sklearn.neighbors import NearestNeighbors
 
-def intrinsic_dimensionality_mle(X: np.ndarray, k: int = 10) -> float:
-    """
-    Estimate intrinsic dimensionality of data X using Levina-Bickel MLE method.
-    
-    Args:
-        X: Data matrix of shape (n_samples, n_features)
-        k: Number of nearest neighbors to use (usually 5 <= k <= 20)
-    
-    Returns:
-        Estimated intrinsic dimensionality (float)
-    """
-    n_samples = X.shape[0]
-    nbrs = NearestNeighbors(n_neighbors=k+1).fit(X)
-    distances, _ = nbrs.kneighbors(X)
-    # distances[:, 0] is zero (distance to self), ignore it
-    distances = distances[:, 1:]  # shape (n_samples, k)
-
-    # Compute MLE estimator for each point
-    logs = np.log(distances[:, -1][:, None] / distances[:, :-1])
-    inv_dims = (1 / (k - 1)) * np.sum(logs, axis=1)
-    dims = 1 / inv_dims
-    # Return the average intrinsic dimension
-    return np.mean(dims)
 
 def converged(
     losses: list[float], 
@@ -79,6 +56,7 @@ class Model(nn.Module):
         n_output = target_tensor.shape[1]
 
         self.fc1 = nn.Linear(n_input, n_latent)
+        self.bn1 = nn.BatchNorm1d(n_latent)
         self.fc2 = nn.Linear(n_latent, n_output)
 
     def forward(self, x: Tensor) -> Tensor:
@@ -91,7 +69,7 @@ class Model(nn.Module):
         Returns:
             Output tensor after forward pass.
         """
-        x = F.sigmoid(self.fc1(x))
+        x = F.relu(self.bn1(self.fc1(x)))
         return self.fc2(x)
 
 
@@ -122,7 +100,7 @@ class Model(nn.Module):
         losses = []
         window = 10
         for epoch in range(max_n_epochs):
-            output = self(self.input_tensor)
+            output = self(torch.log1p(self.input_tensor))
             loss = loss_fn(output, self.target_tensor)
             losses.append(loss.item())
             loss.backward()
@@ -156,45 +134,39 @@ def nn_predictor(
     """
     n_shared_genes = query_matrix.shape[1]
     input_tensor, target_tensor = (Tensor(arr) for arr in np.hsplit(reference_matrix, [n_shared_genes]))
-    #n_latent = int(intrinsic_dimensionality_mle(reference_matrix))
-    model = Model(input_tensor, 5, target_tensor)
+    model = Model(input_tensor, 6, target_tensor)
     model.train(
         torch.optim.AdamW,
-        0.1,
-        torch.nn.MSELoss(),
+        0.01,
+        torch.nn.HuberLoss(),
         10000,
         convergence_cutoff=-0.001,
         *args,
         **kwargs,
     )
     query_tensor: Tensor = Tensor(query_matrix)
-    predicted_counts = model(query_tensor)
+    predicted_counts = model(torch.log1p(query_tensor))
     return predicted_counts.detach().numpy()
 
-def reparameterize(
-    mu: torch.Tensor,
-    std: torch.Tensor
-):
-    return mu
+def reparameterize(mu: torch.Tensor, std: torch.Tensor):
+    eps = torch.randn_like(std)
+    x = mu + std * eps
+    return x, mu, std
+
+def kl_divergence(mu: torch.Tensor, std: torch.Tensor) -> torch.Tensor:
+    return -0.5 * torch.sum(1 + torch.log(std**2 + 1e-8) - mu**2 - std**2) / mu.size(0)
 
 class SampledNormalLayer(nn.Module):
-    def __init__(
-        self, 
-        layer_mu: nn.Module, 
-        layer_std: nn.Module, 
-    ):
+    def __init__(self, layer_mu: nn.Module, layer_std: nn.Module):
         super().__init__()
         self.layer_mu = layer_mu
         self.layer_std = layer_std
 
-    def forward(
-        self,
-        x,
-    ):
+    def forward(self, x):
         mu = self.layer_mu(x)
-        std = self.layer_std(x)
-        res = reparameterize(mu, std)
-        return res
+        std = torch.exp(0.5 * self.layer_std(x)) 
+        z, mu, std = reparameterize(mu, std)
+        return z, mu, std
 
 class VAE(nn.Module):
     def __init__(
@@ -216,21 +188,24 @@ class VAE(nn.Module):
             self.mu,
             self.std
         )
+        self.bn = nn.BatchNorm1d(n_latent)
         self.fc2 = nn.Linear(n_latent, n_output)
 
     def forward(
         self, 
         x: torch.Tensor, 
         mode: Literal["eval", "train"] = "eval"
-    ) -> torch.Tensor:
-        #x = F.relu(self.fc1(x))
-        x = {
-            "eval": self.mu,
-            "train": self.sampling_layer,
-        }[mode](x)
-        x = F.relu(x)
-
-        return self.fc2(x)
+    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        if mode == "eval":
+            x = self.mu(x)
+            x = self.bn(x)
+            x = F.relu(x)
+            return self.fc2(x)
+        else:
+            z, mu, std = self.sampling_layer(x)
+            z = self.bn(z)
+            z = F.relu(z)
+            return self.fc2(z), mu, std
 
     def train(
         self,
@@ -238,19 +213,22 @@ class VAE(nn.Module):
         lr: float,
         loss_fn: Any,
         max_n_epochs: int,
-        verbose: bool = False
+        verbose: bool = False,
+        convergence_cutoff: float = 0
     ) -> list[float]:
         optimizer = optimizer(self.parameters(), lr=lr)
         losses = []
         window = 10
         for epoch in range(max_n_epochs):
-            output = self(self.input_tensor, mode="train")
-            loss = loss_fn(output, self.target_tensor)
+            output, mu, std = self(torch.log1p(self.input_tensor), mode="train")
+            recon_loss = loss_fn(output, self.target_tensor)
+            kl_loss = kl_divergence(mu, std)
+            loss = recon_loss + kl_loss
             losses.append(loss.item())
             loss.backward()
             optimizer.step()
             optimizer.zero_grad()
-            if epoch % window == 0 and converged(losses, window=window, cutoff=5e-1):
+            if epoch % window == 0 and converged(losses, window=window, cutoff=convergence_cutoff):
                 print(f"convergence reached, training stopped at {epoch}")
                 break
         if verbose:
@@ -266,15 +244,16 @@ def vae_predictor(
 
     n_shared_genes = query_matrix.shape[1]
     input_tensor, target_tensor = (torch.Tensor(arr) for arr in np.hsplit(reference_matrix, [n_shared_genes]))
-    model = VAE(input_tensor, 10, target_tensor)
+    model = VAE(input_tensor, 6, target_tensor)
     model.train(
-        torch.optim.Adam,
-        1e-1,
-        torch.nn.MSELoss(),
-        1000,
+        torch.optim.AdamW,
+        0.01,
+        torch.nn.HuberLoss(),
+        10000,
+        convergence_cutoff=-0.001,
         *args,
         **kwargs,
     )
     query_tensor  = torch.Tensor(query_matrix)
-    predicted_counts = model(query_tensor)
+    predicted_counts = model(torch.log1p(query_tensor))
     return predicted_counts.detach().numpy()
