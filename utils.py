@@ -1,9 +1,35 @@
 from typing import Any, Callable, Generator, Hashable, Iterable, Optional
 
 from anndata import AnnData
+
 import numpy as np
 from numpy.typing import NDArray
-from pandas import Index
+
+from pandas import DataFrame, Series, Index
+from pandas._typing import Axis, Scalar
+
+from typing import Callable, Optional
+from pandas._typing import Axis, Scalar
+import pandas as pd
+from pandas import DataFrame, Series
+
+def sort_df(
+    df: DataFrame,
+    func: Callable[[Series], Scalar],
+    axis: Axis = 0,
+    ascending: bool = True
+) -> DataFrame:
+    values = df.apply(func, axis=axis) # type: ignore
+    sorter = values.sort_values(ascending=ascending).index
+
+    axis_num = df._get_axis_number(axis) # type: ignore
+    match axis_num:
+        case 0:
+            return df.loc[:, sorter] # type: ignore
+        case 1: 
+            return df.loc[sorter]
+        case _:
+            raise ValueError()
 
 def filter_celltypes_by_size(
     adata: AnnData,
