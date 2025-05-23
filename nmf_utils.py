@@ -108,14 +108,26 @@ def initialize_nmf_factors_from_clustering(
     sc.pp.log1p(adata_copy)
     sc.tl.pca(adata_copy)
     sc.pp.neighbors(adata_copy)
+    current_target = n_clusters
 
-    result: AnnData = find_input_for_output(
-        f=lambda x: sc.tl.leiden(adata_copy, resolution=x, copy=True), # type: ignore
-        g=lambda adata: adata.obs["leiden"].nunique(),
-        target=n_clusters
-    )
+    while current_target >= 1:
+        try:
+            result: AnnData = find_input_for_output(
+                f=lambda x: sc.tl.leiden(adata_copy, resolution=x, copy=True),  # type: ignore
+                g=lambda adata: adata.obs["leiden"].nunique(),
+                target=current_target
+            )
 
-    sc.tl.rank_genes_groups(result, 'leiden')
+            sc.tl.rank_genes_groups(result, 'leiden')
+            break 
+
+        except ValueError as e:
+            print(f"ValueError at {current_target} clusters: {e}")
+            current_target -= 1
+
+    else:
+        raise RuntimeError("Could not complete clustering and gene ranking with any cluster count.")
+
 
     W = pd.get_dummies(result.obs["leiden"], dtype="float").replace(0, 0.1).values.astype(arr.dtype)
     H: NDArray[Any] = (lambda arr: np.where(arr < 0, 0.1, arr))(
@@ -148,7 +160,7 @@ def nmf_predictor(
 
     n_components, losses = select_optimal_components(
         reference_matrix,
-        range(2, 10),
+        range(2, 12),
         curve="convex",
         direction="decreasing"
     )
