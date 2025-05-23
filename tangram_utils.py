@@ -385,7 +385,8 @@ def project_genes_unfiltered(adata_map, adata_sc, cluster_label=None, scale=True
 
 def tangram_predictor(
     query_matrix: NDArray,
-    reference_matrix: NDArray
+    reference_matrix: NDArray,
+    verbose: bool = False
 ) -> NDArray:
     """
     Predicts feature counts for a query matrix based on the Tangram gene projection from a reference dataset.
@@ -407,6 +408,7 @@ def tangram_predictor(
     ad_map = map_cells_to_space(
         adata_sc=adata_reference,
         adata_sp=adata_query,
+        verbose=verbose
     )
     ad_ge = project_genes_unfiltered(ad_map, adata_reference)
     assert isinstance(ad_ge.X, np.ndarray)
