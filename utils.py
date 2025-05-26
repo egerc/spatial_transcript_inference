@@ -13,6 +13,28 @@ from pandas._typing import Axis, Scalar
 import pandas as pd
 from pandas import DataFrame, Series
 
+def subsample_adata(adata: AnnData, n_obs: int, seed: Optional[int] = None) -> AnnData:
+    """
+    Subsample a given AnnData object to a specified number of observations (cells).
+
+    Parameters
+    ----------
+    adata : AnnData
+        The input annotated data matrix to subsample from.
+    n_obs : int
+        The number of observations (cells) to sample without replacement.
+    seed : int, optional
+        Seed for the random number generator for reproducibility.
+
+    Returns
+    -------
+    AnnData
+        A new AnnData object containing the subsampled observations.
+    """
+    rng = np.random.default_rng(seed=seed)
+    cell_id = rng.choice(np.arange(adata.n_obs), n_obs, replace=False)
+    return adata[cell_id].copy()
+
 def sort_df(
     df: DataFrame,
     func: Callable[[Series], Scalar],
