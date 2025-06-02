@@ -207,6 +207,8 @@ def evaluate_method_by_cluster(
     data_dict: dict[str, tuple[NDArray, NDArray]],
     method_dict: dict[str, Callable],
     corr_func: Callable[[NDArray, NDArray], float],
+    *args,
+    **kwargs
 ) -> pd.DataFrame:
     """
     Evaluate prediction accuracy across multiple cell types and methods.
@@ -222,6 +224,7 @@ def evaluate_method_by_cluster(
             A dictionary mapping method names to predictor functions that accept (query, reference) arrays.
         corr_func : Callable[[NDArray, NDArray], float]
             A function to compute correlation between predicted and true features.
+        *args, **kwargs: passed to mean_randomized_cross_feature_prediction
 
     Returns:
         pd.DataFrame
@@ -230,7 +233,7 @@ def evaluate_method_by_cluster(
     def compute_correlation(celltype: str, method_name: str) -> tuple:
         predictor = method_dict[method_name]
         query, reference = data_dict[celltype]
-        predicted = mean_randomized_cross_feature_prediction(query, reference, predictor, 5)
+        predicted = mean_randomized_cross_feature_prediction(query, reference, predictor, *args, **kwargs)
         correlation = corr_func(query, predicted)
         return celltype, method_name, correlation
 
