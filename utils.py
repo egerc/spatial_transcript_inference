@@ -1,16 +1,15 @@
-from typing import Any, Callable, Generator, Hashable, Iterable, Optional
+from typing import Any, Callable, Generator, Hashable, Optional
+import itertools
+from tqdm import tqdm
 
 from anndata import AnnData
 
 import numpy as np
 from numpy.typing import NDArray
 
+import pandas as pd
 from pandas import DataFrame, Series, Index
 from pandas._typing import Axis, Scalar
-
-from typing import Callable, Optional
-from pandas._typing import Axis, Scalar
-import pandas as pd
 from pandas import DataFrame, Series
 
 def subsample_adata(adata: AnnData, n_obs: int, seed: Optional[int] = None) -> AnnData:
@@ -204,3 +203,42 @@ def group_by_common_obs(
         )
         yield value, adata1_filtered, adata2_filtered
 
+def evaluate_method_by_cluster(
+    data_dict: dict[str, tuple[NDArray, NDArray]],
+    method_dict: dict[str, Callable],
+    corr_func: Callable[[NDArray, NDArray], float],
+) -> pd.DataFrame:
+    """
+    Evaluate prediction accuracy across multiple cell types and methods.
+
+    For each combination of method and cell type, this function:
+    - Applies `mean_randomized_cross_feature_prediction` to predict features.
+    - Computes the correlation between predicted and true features using `corr_func`.
+
+    Arguments:
+        data_dict : dict of str -> (NDArray, NDArray)
+            A dictionary mapping celltype names to tuples of (query, reference) feature arrays.
+        method_dict : dict of str -> Callable
+            A dictionary mapping method names to predictor functions that accept (query, reference) arrays.
+        corr_func : Callable[[NDArray, NDArray], float]
+            A function to compute correlation between predicted and true features.
+
+    Returns:
+        pd.DataFrame
+            A DataFrame with cell types as rows, methods as columns, and correlation scores as values.
+    """
+    def compute_correlation(celltype: str, method_name: str) -> tuple:
+        predictor = method_dict[method_name]
+        query, reference = data_dict[celltype]
+        predicted = mean_randomized_cross_feature_prediction(query, reference, predictor, 5)
+        correlation = corr_func(query, predicted)
+        return celltype, method_name, correlation
+
+    records = [
+        compute_correlation(celltype, method_name)
+        for method_name, celltype
+        in tqdm(itertools.product(method_dict.keys(), data_dict.keys()))
+    ]
+    return pd.DataFrame(records, columns=["celltype", "method", "corr"]).pivot(
+        columns="method", index="celltype", values="corr"
+    )
