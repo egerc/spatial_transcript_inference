@@ -1,4 +1,4 @@
-from typing import Any, Callable, Iterable, Optional, TypeVar
+from typing import Any, Callable, Iterable, Literal, Optional, TypeVar
 
 from anndata import AnnData
 from sklearn.decomposition import non_negative_factorization
@@ -8,6 +8,32 @@ import numpy as np
 from numpy.typing import NDArray
 import pandas as pd
 import scanpy as sc
+
+def non_negative_factorization_reimplementation(
+        X: np.ndarray, 
+        W: np.ndarray | None = None, 
+        H: None | np.ndarray=None, 
+        n_components: int | None = None, 
+        init: Literal["custom"] | None =None,
+        update_H: bool=True,
+        max_iter: int=200
+) -> tuple[np.ndarray, np.ndarray, int]:
+
+    if n_components is None:
+        if H is not None:
+            n_components = H.shape[0]
+        else:
+            n_components = min(X.shape)
+    if W is None and init != "custom":
+        W = np.ones((X.shape[0], n_components))
+    if H is None and init != "custom":
+        H = np.ones((n_components, X.shape[1]))
+    
+    for _ in tqdm(range(max_iter)):
+        W = (W.T * (H @ X.T) / (H @ H.T @ W.T + 1e-9)).T
+        if update_H:
+            H = (H * (W.T @ X) / (W.T @ W @ H + 1e-9))
+    return W, H, max_iter
 
 def select_optimal_components(
     X: NDArray[Any],
