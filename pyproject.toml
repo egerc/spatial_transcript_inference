@@ -1,0 +1,20 @@
+[project]
+name = "spatial-transcript-inference"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "ipykernel>=6.29.5",
+    "kneed>=0.8.5",
+    "notebook>=7.4.3",
+    "scanpy>=1.11.2",
+    "scikit-learn>=1.6.1",
+    "scipy>=1.15.3",
+    "tangram-sc>=1.0.4",
+    "torch>=2.7.0",
+]
+
+[tool.setuptools]
+packages = ["spatial_transcript_inference"]
+package-dir = {"" = "src"}
