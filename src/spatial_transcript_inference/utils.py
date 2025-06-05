@@ -247,8 +247,7 @@ def evaluate_method_by_cluster(
         EvalRecord(
             celltype, method_name, compute_prediction(celltype, method_name)
         )
-        for celltype in tqdm(data_dict)
-        for method_name in method_dict
+        for celltype, method_name in tqdm(itertools.product(data_dict, method_dict))
     ]
 
     return results
