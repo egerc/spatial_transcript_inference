@@ -37,7 +37,7 @@ def disk_cache(RESULT_CACHE: Path = Path("result_cache")) -> Callable:
     Returns:
         A decorator that caches the results of the decorated function.
     """
-    Path.mkdir(RESULT_CACHE, exist_ok=True)
+    RESULT_CACHE.mkdir(exist_ok=True, parents=True)
 
     def decorator(func: Callable) -> Callable:
         @wraps(func)
