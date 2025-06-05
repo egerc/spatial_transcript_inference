@@ -70,12 +70,11 @@ class Model(nn.Module):
             Output tensor after forward pass.
         """
         x = F.relu(self.bn1(self.fc1(x)))
-        return self.fc2(x)
+        return F.relu(self.fc2(x))
 
 
     def train(
         self,
-        optimizer: Callable[..., torch.optim.Optimizer],
         lr: float,
         loss_fn: Any,
         max_n_epochs: int,
@@ -96,7 +95,7 @@ class Model(nn.Module):
         Returns:
             List of loss values per epoch.
         """
-        optimizer = optimizer(self.parameters(), lr=lr)
+        optimizer = torch.optim.AdamW(self.parameters(), lr=lr)
         losses = []
         window = 10
         for epoch in range(max_n_epochs):
@@ -136,7 +135,6 @@ def nn_predictor(
     input_tensor, target_tensor = (Tensor(arr) for arr in np.hsplit(reference_matrix, [n_shared_genes]))
     model = Model(input_tensor, 6, target_tensor)
     model.train(
-        torch.optim.AdamW,
         0.01,
         torch.nn.HuberLoss(),
         10000,
@@ -209,14 +207,13 @@ class VAE(nn.Module):
 
     def train(
         self,
-        optimizer: Callable[..., torch.optim.Optimizer],
         lr: float,
         loss_fn: Any,
         max_n_epochs: int,
         verbose: bool = False,
         convergence_cutoff: float = 0
     ) -> list[float]:
-        optimizer = optimizer(self.parameters(), lr=lr)
+        optimizer = torch.optim.AdamW(self.parameters(), lr=lr)
         losses = []
         window = 10
         for epoch in range(max_n_epochs):
@@ -246,7 +243,6 @@ def vae_predictor(
     input_tensor, target_tensor = (torch.Tensor(arr) for arr in np.hsplit(reference_matrix, [n_shared_genes]))
     model = VAE(input_tensor, 6, target_tensor)
     model.train(
-        torch.optim.AdamW,
         0.01,
         torch.nn.HuberLoss(),
         10000,
