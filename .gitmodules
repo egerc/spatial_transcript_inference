@@ -1,3 +1,6 @@
 [submodule "external/spage"]
 	path = external/spage
 	url = https://github.com/gruenlab/SpaGE.git
+[submodule "external/SpaOTsc"]
+	path = external/SpaOTsc
+	url = https://github.com/gruenlab/SpaOTsc.git
