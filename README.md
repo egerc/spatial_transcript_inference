@@ -14,6 +14,7 @@ uv pip install .
 ```
 
 pip
+make sure python version >= 3.11
 ```bash
 python -m venv .venv
 source .venv/bin/activate
