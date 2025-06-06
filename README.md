@@ -17,12 +17,13 @@ pip
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install .
+pip install -r requirements.txt
+pip install --no-deps .
 ```
 
 mamba
 ```bash
-mamba create -n myenv python=3.11
-mamba activate myenv
+mamba create -n benchmarking-env python=3.11
+mamba activate benchmarking-env
 pip install -r requirements.txt
 ```
